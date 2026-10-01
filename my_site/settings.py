@@ -31,6 +31,7 @@ ALLOWED_HOSTS = []
 # Application definition
 
 INSTALLED_APPS = [
+    'blog',
     'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',
@@ -54,7 +55,9 @@ ROOT_URLCONF = 'my_site.urls'
 TEMPLATES = [
     {
         'BACKEND': 'django.template.backends.django.DjangoTemplates',
-        'DIRS': [],
+        'DIRS': [
+            BASE_DIR / "templates"
+            ],
         'APP_DIRS': True,
         'OPTIONS': {
             'context_processors': [
@@ -125,3 +128,7 @@ MAILERS = {
         'BACKEND': 'django.core.mail.backends.console.EmailBackend',
     },
 }
+
+STATIC_URL = '/static/'
+STATICFILES_DIRS = [
+    BASE_DIR / "static"]    
