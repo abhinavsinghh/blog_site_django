@@ -1,85 +1,87 @@
+from django.http import HttpResponseRedirect
 from django.shortcuts import render, get_object_or_404
-from datetime import date
+from django.urls import reverse
+from django.views.generic import ListView, View
+
+from .forms import CommentForm
 from .models import Post
 
 
-all_posts = [
-    # {
-    #     "slug": "hike-in-the-mountains",
-    #     "image": "mountains.jpg",
-    #     "author": "Abhinav",
-    #     "date": date(2024, 7, 10),
-    #     "title": "Mountain Hiking",
-    #     "excerpt": "Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed euismod, nisl vel tincidunt lacinia, nunc nisl aliquam nunc, eget aliquam nisl nunc vel nisl.",
-    #     "content": """
-    #     Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed non risus. 
-    #     Suspendisse lectus tortor, dignissim sit amet, adipiscing nec, ultricies sed, dolor. 
-    #     Cras elementum ultrices diam. Maecenas ligula massa, varius a, semper congue, euismod non, mi.
-    #     Proin porttitor, orci nec nonummy molestie, enim est eleifend mi, non fermentum diam nisl sit 
-    #     amet erat. Duis semper. Duis arcu massa, scelerisque vitae, consequat in, pretium a, enim. 
-    #     Pellentesque congue. Ut in risus volutpat libero pharetra tempor. Cras vestibulum bibendum augue.
-    #     """
-    # },
-    # {
-    #     "slug": "beach-vacation",
-    #     "image": "woods.jpg",
-    #     "author": "Abhinav",
-    #     "date": date(2024, 6, 15),
-    #     "title": "Beach Vacation",
-    #     "excerpt": "Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed euismod, nisl vel tincidunt lacinia, nunc nisl aliquam nunc, eget aliquam nisl nunc vel nisl.",
-    #     "content": """
-    #     Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed non risus. 
-    #     Suspendisse lectus tortor, dignissim sit amet, adipiscing nec, ultricies sed, dolor. 
-    #     Cras elementum ultrices diam. Maecenas ligula massa, varius a, semper congue, euismod non, mi.
-    #     Proin porttitor, orci nec nonummy molestie, enim est eleifend mi, non fermentum diam nisl sit 
-    #     amet erat. Duis semper. Duis arcu massa, scelerisque vitae, consequat in, pretium a, enim. 
-    #     Pellentesque congue. Ut in risus volutpat libero pharetra tempor. Cras vestibulum bibendum augue.
-    #     """
-    # },
-    # {
-    #     "slug": "city-exploration",
-    #     "image": "coding.jpg",
-    #     "author": "Abhinav",
-    #     "date": date(2024, 5, 20),
-    #     "title": "City Exploration",
-    #     "excerpt": "Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed euismod, nisl vel tincidunt lacinia, nunc nisl aliquam nunc, eget aliquam nisl nunc vel nisl.",
-    #     "content": """
-    #     Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed non risus. 
-    #     Suspendisse lectus tortor, dignissim sit amet, adipiscing nec, ultricies sed, dolor. 
-    #     Cras elementum ultrices diam. Maecenas ligula massa, varius a, semper congue, euismod non, mi.
-    #     Proin porttitor, orci nec nonummy molestie, enim est eleifend mi, non fermentum diam nisl sit 
-    #     amet erat. Duis semper. Duis arcu massa, scelerisque vitae, consequat in, pretium a, enim. 
-    #     Pellentesque congue. Ut in risus volutpat libero pharetra tempor. Cras vestibulum bibendum augue.
-    #     """
-    # }
-    
-]
+class StartingPageView(ListView):
+    template_name = "blog/index.html"
+    model = Post
+    ordering = ["-date"]
+    context_object_name = "posts"
+
+    def get_queryset(self):
+        return super().get_queryset()[:3]
 
 
-# Create your views here.
+class AllPostsView(ListView):
+    template_name = "blog/all-posts.html"
+    model = Post
+    ordering = ["-date"]
+    context_object_name = "all_posts"
 
-def get_date(post):
-    return post['date']
+
+class SingletonPostView(View):
+    template_name = "blog/post-detail.html"
+
+    def is_stored_post(self, request, post_id):
+        return post_id in request.session.get("stored_posts", [])
+
+    def render_post(self, request, post, comment_form):
+        context = {
+            "post": post,
+            "post_tags": post.tags.all(),
+            "comment_form": comment_form,
+            "comments": post.comments.all().order_by("-id"),
+            "saved_for_later": self.is_stored_post(request, post.id),
+        }
+        return render(request, self.template_name, context)
+
+    def get(self, request, slug):
+        post = get_object_or_404(Post, slug=slug)
+        return self.render_post(request, post, CommentForm())
+
+    def post(self, request, slug):
+        post = get_object_or_404(Post, slug=slug)
+        comment_form = CommentForm(request.POST)
+
+        if comment_form.is_valid():
+            comment = comment_form.save(commit=False)
+            comment.post = post
+            comment.save()
+            return HttpResponseRedirect(reverse("post-detail-page", args=[slug]))
+
+        return self.render_post(request, post, comment_form)
 
 
-def starting_page(request):
-    latest_posts = Post.objects.all().order_by("-date")[:3]
-    # sorted_posts = sorted(all_posts, key=get_date)
-    # latest_posts = sorted_posts[-3:]
-    return render(request, "blog/index.html", {
-        "posts": latest_posts
-    })
+class ReadLaterView(View):
+    def get(self, request):
+        stored_posts = request.session.get("stored_posts", [])
+        posts = Post.objects.filter(id__in=stored_posts) if stored_posts else []
 
-def posts(request):
-    all_posts = Post.objects.all().order_by("-date")
-    return render(request, "blog/all-posts.html",{
-        "all_posts": all_posts
-    })
+        context = {
+            "posts": posts,
+            "has_posts": bool(stored_posts),
+        }
+        return render(request, "blog/stored-posts.html", context)
 
-def post_detail(request, slug):
-    identified_post = get_object_or_404(Post, slug=slug)
-    # post = next(post for post in all_posts if post["slug"] == slug)
-    return render(request, "blog/post-detail.html", {
-        "post": identified_post,
-        "post_tags":identified_post.tags.all()
-    })
+    def post(self, request):
+        try:
+            post_id = int(request.POST["post_id"])
+        except (KeyError, ValueError):
+            return HttpResponseRedirect(reverse("starting-page"))
+
+        stored_posts = request.session.get("stored_posts", [])
+
+        if post_id in stored_posts:
+            stored_posts.remove(post_id)
+        else:
+            stored_posts.append(post_id)
+
+        # Reassign so the session knows it was modified.
+        request.session["stored_posts"] = stored_posts
+
+        return HttpResponseRedirect(reverse("starting-page"))
